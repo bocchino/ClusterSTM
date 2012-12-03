@@ -11,9 +11,9 @@ License
 This software is free for general use, provided that attribution is
 maintained (citing this repository is sufficient).
 
-This software incorporates the 'umalloc' library, which is released
-under GPL2.  For further information, see the file COPYING.LIB in the
-directory ClusterSTM/Implementation/grt/umalloc.
+This software incorporates the `umalloc` library, which is released
+under GPL2.  For further information, see the file `COPYING.LIB` in the
+directory `ClusterSTM/Implementation/grt/umalloc`.
 
 This software is provided with absolutely no warranty of any kind.
 
