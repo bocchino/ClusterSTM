@@ -1,0 +1,113 @@
+START
+numICEdges
+6
+maxVertex
+32
+maxClusterSize
+20
+maxCliqueSize
+4
+alpha
+0.700000
+linkWeight
+4
+maxParalEdges
+1
+adjLists
+64
+adjLists{1}
+2
+22 31 
+adjLists{2}
+1
+27 
+adjLists{3}
+0
+
+adjLists{4}
+1
+27 
+adjLists{5}
+0
+
+adjLists{6}
+2
+20 27 
+adjLists{7}
+1
+25 
+adjLists{8}
+0
+
+adjLists{9}
+3
+11 26 30 
+adjLists{10}
+2
+12 15 
+adjLists{11}
+3
+9 26 30 
+adjLists{12}
+4
+10 13 21 23 
+adjLists{13}
+3
+12 21 23 
+adjLists{14}
+3
+28 29 32 
+adjLists{15}
+1
+10 
+adjLists{16}
+0
+
+adjLists{17}
+2
+21 24 
+adjLists{18}
+1
+30 
+adjLists{19}
+0
+
+adjLists{20}
+1
+6 
+adjLists{21}
+4
+12 13 17 23 
+adjLists{22}
+3
+1 28 31 
+adjLists{23}
+3
+12 13 21 
+adjLists{24}
+1
+17 
+adjLists{25}
+1
+7 
+adjLists{26}
+3
+9 11 30 
+adjLists{27}
+3
+2 4 6 
+adjLists{28}
+4
+14 22 29 32 
+adjLists{29}
+3
+14 28 32 
+adjLists{30}
+4
+9 11 18 26 
+adjLists{31}
+2
+1 22 
+adjLists{32}
+3
+14 28 29 

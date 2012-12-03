@@ -1,0 +1,430 @@
+\documentclass[10pt]{article}
+
+%%--------------------------------------------------------------------------- 
+%% LaTeX Configuration
+%% Most of this is lifted from NIH_Center.tex by Eric Bohm
+%%--------------------------------------------------------------------------- 
+%\usepackage{graphicx}
+\usepackage{enumerate}
+\usepackage{setspace}
+\usepackage{times}
+\usepackage{psfig}
+\usepackage{epsfig}
+\usepackage{epsf}
+\usepackage{subfigure}
+\usepackage{calc}
+\usepackage{alltt}
+\usepackage{amsfonts}
+\usepackage{amsbsy}
+\usepackage{amsmath}
+\usepackage{color}
+\usepackage{cite}
+\usepackage{listings}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{newalg}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+\newtheorem{conjecture}{Conjecture}
+\newtheorem{lemma}{Lemma}
+\newtheorem{definition}{Definition}
+
+%%% in-band figures
+\renewcommand{\textfraction}{0.0}
+\renewcommand{\topfraction}{1.0}
+\renewcommand{\bottomfraction}{0}
+\renewcommand{\floatpagefraction}{.99}
+
+\oddsidemargin  -0.2 in
+\evensidemargin -0.2 in
+\textheight      9.0 in
+\textwidth       6.8 in
+\topmargin      -0.3 in
+
+\parskip 3pt plus 1pt
+\baselineskip 13pt 
+\itemsep 0em
+\topsep 0em
+
+\def\Comment#1{\textbf{\textsl{$\langle\!\langle$#1$\rangle\!\rangle$}}}
+
+%%--------------------------------------------------------------------------- 
+%% Main Document
+%%--------------------------------------------------------------------------- 
+
+\title{\bfseries{SSCA2 Kernel 4 Algorithm Description}} 
+\author{Robert L. Bocchino Jr.}
+\date{September 2007}
+
+\bibliographystyle{plain}
+
+\begin{document}
+
+\begin{sloppypar}
+
+\maketitle
+
+This document describes my implementation of SSCA2 Kernel 4 (graph
+clustering), based on the reference implementation provided in version
+1.0 of the benchmark.  I describe both the explicit locks version and
+the STM version.  Please note that \emph{both versions are
+speculative}.  However, the locks version encodes the speculation
+``manually'' at the application level, while the STM version leverages
+the speculative mechanism built into the STM runtime.  Similarly, the
+locks version uses explicit locks, while the STM version uses the
+locks built into the STM.  (In theory, the STM implementation could
+also be lock-free, but mine isn't.)
+
+Both versions of the algorithm use the following processor-local,
+function-global data structures, one on each processor $p$:
+\begin{itemize}
+\item $V_p$:  The set of vertices local to $p$.  The vertices adjacent
+  to each $v \in V_p$ are stored in an adjacency list representation,
+  also on $p$.  The adjacency list is modified when a vertex in the
+  list is added to a cluster (``claimed'') so that subsequent users of
+  the list will no longer ``see'' the link to the cluster (this
+  effectively removes each vertex in the cluster from the graph).
+\item \emph{candidateSet}:  The set of candidate vertices for
+  inclusion in the cluster we are currently computing
+\item \emph{adjSet}:  The set of vertices adjacent to the candidate
+  set
+\item \emph{adjCache}: A map that locally stores the adjacency list of
+  each vertex that we have locked.  The set of keys in the map also
+  records which vertices we have locked.
+\item \emph{cluster}: The actual current cluster, a subset of
+\emph{candidateSet}
+\item The \emph{output}, consisting of a set of clusters.
+\end{itemize}
+There is also an array (not explicitly shown) that associates a
+\emph{state} with each vertex.  
+
+\section{Explicit Locks Implementation}
+
+In the explicit locks version, the possible vertex states are CLAIMED,
+which means that some processor has permanently added this vertex to a
+cluster; AVAILABLE, which means that the vertex is available for any
+processor to add to a cluster; and LOCKED, which means that some
+processor has provisionally added the vertex to its cluster, but has
+not yet committed the cluster.  The LOCKED state also encodes which
+processor owns the lock; this information is used for a simple
+priority-based deadlock avoidance protocol.  The vertex state array is
+distributed across the processors in the same way as the vertices and
+is visible to all processors.
+
+\subsection{Main Algorithm}
+
+\emph{Pseudocode}.  Figure~\ref{figure:main} shows the pseudocode for
+the main algorithm.  Each processor iterates over its local vertices,
+as shown in line 4.  If the vertex is claimed, then the processor
+moves on.  If the vertex is locked, then the processor keeps trying
+that vertex until it is claimed or released.  Once a processor locks a
+local vertex, it attempts to build a \emph{candidate set} starting
+with that vertex, as shown in line 7.  This procedure may fail,
+because it involves locking more vertices.  If it fails, then the
+processor unlocks everything and tries again.  Otherwise, it uses the
+candidate set to compute a cluster, updates the vertex data (state and
+adjacency lists) possibly residing on other processors, and adds the
+cluster to its local output, as shown in lines 8--10.
+
+\emph{Supporting functions}.  The supporting functions are
+\emph{lock}, \emph{compute\_candidate\_set}, \emph{update\_graph},
+\emph{abort}, and \emph{compute\_cluster}.  Section~\ref{section:lock}
+explains the function \emph{lock}, section~\ref{section:compute_cset}
+explains the function \emph{compute\_candidate\_set}, and
+section~\ref{section:update} explains the function \emph{update\_graph}.  The
+function \emph{abort} sets the state of each vertex in \emph{adjCache}
+to AVAILABLE, using the same per-processor aggregation pattern as
+\emph{lock}.  It is very straightforward, because it cannot fail
+(unlike \emph{lock}).  I omit its pseudocode.  The function
+\emph{compute\_cluster} is a local computation: if \emph{candidateSet}
+is sufficiently large (bigger than a prescribed minimum) it sets the
+cluster to be the first $n$ elements of \emph{candidateSet} such that
+the number of adjacencies between those elements and the whole set is
+minimized.  If \emph{candidateSet} is not sufficiently large, it just
+uses the whole candidate set.  I omit the pseudocode for this
+function.  For further details, see the SSCA2 specification.
+
+\begin{center}
+\begin{figure}
+\begin{algorithm}{SSCA2K4}{\text{Graph $G = (V,E)$}}
+\text{Distribute $V$ evenly over the processors $P$ into sets $V_p$}
+\\
+\begin{FOR}{\text{each processor $p$ in parallel}}
+\begin{WHILE}{V_p \neq \emptyset}
+\text{\emph{adjCache}} \leftarrow \emptyset \\
+v \leftarrow \text{remove one element of $V_p$} \\
+\text{\textbf{if} $v$ is claimed \textbf{then} continue} \\
+\text{\textbf{if} \CALL{lock}$(v) =$ FAIL \textbf{then} add $v$ to
+  $V_p$; continue} \\
+\text{\textbf{if}} \CALL{compute\_candidate\_set}(v) = \text{FAIL \textbf{then}}
+\CALL{abort}(); \text{add $v$ to $V_p$}; \text{continue} \\
+\text{\emph{cluster}} \leftarrow \CALL{compute\_cluster}() \\
+\CALL{update\_graph}() \\
+\text {add \emph{cluster} to \emph{output}}
+\end{WHILE}
+\end{FOR} \\
+\text{Merge output of all processors}
+\end{algorithm}
+\caption{Pseduocode for SSCA2 Kernel 4, locks implementation}
+\label{figure:main}
+\end{figure}
+\end{center}
+
+\subsection{The \emph{lock} Function}
+\label{section:lock}
+
+Figure~\ref{figure:lock} shows the pseudocode for the function
+\emph{lock}.  We lock only the vertices not present in
+\emph{adjCache}, because any vertex in \emph{adjCache} has already
+been locked.  We sort the vertices to lock by processor.  For each
+processor, we send out all vertices in one message, and we perform the
+lock operation locally on the destination processor.  We get back an
+array of results.  We then iterate through the array, checking the
+status of each vertex.
+
+If the status of a vertex is CLAIMED, then we will never be able to
+acquire this vertex (some other processor has claimed it), so we give
+up on this cluster and return FAIL.  If the status is AVAILABLE, then
+the local lock operation has locked the vertex for us and returned its
+adjacency list; we put the list into \emph{adjCache} for later use.
+If the status is neither CLAIMED nor AVAILABLE, then some other
+processor has locked the vertex, and the status tells us which
+processor that is.  We compare the status with our own processor ID to
+see our relative priority to the lockholder.  If we are lower
+priority, we abort.  If we are higher priority, we put the vertex back
+into the vertex set and try to get it on the next pass, knowing that
+the lockholder will eventually succeed or abort (it will never wait
+for a higher priority processor, and in particular will never be
+connected to us by a chain of wait-for edges).  We keep iterating over
+the vertex set until it is empty.
+
+\begin{center}
+\begin{figure}
+\begin{algorithm}{lock}{\text{vertices $V$}}
+\begin{WHILE}{V \neq \emptyset}
+\text{sort $V \backslash \CALL{keys}(\mbox{\emph{adjCache}})$ by processor into sets $V_p$}\\
+V \leftarrow \emptyset \\
+\begin{FOR}{\text{each processor $p$ such that $V_p$ is nonempty}}
+\text{\emph{results} $\leftarrow$ \textbf{on} $p$ \CALL{lock\_local}$(V_p)$} \\
+\begin{FOR}{\text{each $r \in$ \emph{results}}}
+\text{\textbf{if} $r$.\emph{status} $=$ CLAIMED \textbf{then return} FAIL} \\
+\text{\textbf{else if} $r$.\emph{status} $=$ AVAILABLE \textbf{then}
+\emph{adjCache}$[v] \leftarrow r.$\emph{adjList}} \\
+\text{\textbf{else if} lockholder is higher priority \textbf{then return} FAIL} \\
+\text{\textbf{else} add $v$ to $V$}
+\end{FOR}
+\end{FOR}
+\end{WHILE}\\
+\RETURN{\text{SUCCEED}}
+\end{algorithm}
+\caption{Pseudocode for the \emph{lock} function}
+\label{figure:lock}
+\end{figure}
+\end{center}
+
+\subsection{The \emph{compute\_candidate\_set} Function}
+\label{section:compute_cset}
+
+Figure~\ref{figure:compute_cset} shows the pseudocode for the function
+\emph{compute\_candidate\_set}.  This function computes a ``candidate
+set'' (a superset of a cluster) starting with a single ``seed'' vertex
+$v$.  We maintain an \emph{adjSet}, which consists of all vertices
+adjacent to the candidate set.  Initially, the candidate set contains
+$v$, and \emph{adjSet} contains the adjacencies of $v$, which we look
+up in the \emph{adjCache}.  We try to lock the \emph{adjSet} and abort
+if any of the locks fails.
+
+We iteratively add points to the candidate set.  In each iteration, we
+do the following:
+\begin{enumerate}
+\item Select a next candidate from the current \emph{adjSet}.  The
+selection uses a simple heuristic to look for a vertex that is most
+tightly connected to the cluster.  I omit the pseudocode, but more
+detail can be found in the SSCA2 specification.
+\item Try to lock the adjacencies of $v$ that are not already in our
+  candidate set.  One of these vertices will become our next
+  candidate.  If this operation fails, abort.
+\item Add $v$ to the candidate set and remove it from \emph{adjSet}.
+  Add the new adjacencies of $v$ (i.e., adjacencies that aren't
+  already in the candidate set) to the candidate set.
+\end{enumerate}
+We continue iterating until (1) there are no more vertices adjacent to
+the candidate set or (2) the candidate set is sufficiently large.
+
+\begin{center}
+\begin{figure}
+\begin{algorithm}{compute\_candidate\_set}{\text{vertex $v$}}
+\text{\emph{candidateSet} $\leftarrow$ $\{v\}$} \\
+\text{\emph{adjSet} $\leftarrow$ \emph{adjCache}$[v]$} \\
+\text{\textbf{if} \CALL{lock}$($\emph{adjSet}$)$ = FAIL \textbf{then return} FAIL} \\
+\begin{WHILE}{\text{\emph{adjSet}} \neq \emptyset \text{\textbf{and}} 
+|\text{\emph{candidateSet}}| < \text{MAX\_CLUSTER\_SIZE}}
+v \leftarrow \CALL{next\_candidate}(\mbox{\emph{adjSet}}) \\
+\text{\textbf{if} \CALL{lock}$(\mbox{\emph{adjCache}}[v] \backslash \mbox{\emph{candidateSet}}) =$ FAIL 
+\textbf{then return} FAIL} \\
+\text{add $v$ to candidateSet} \\
+\text{remove $v$ from \emph{adjSet}} \\
+\text{add \emph{adjCache}$[v] \backslash \text{\emph{candidateSet}}$ to \emph{adjSet}}
+\end{WHILE} \\
+\RETURN{\text{SUCCEED}}
+\end{algorithm}
+\caption{Pseudocode for the \emph{compute\_candidate\_set} function}
+\label{figure:compute_cset}
+\end{figure}
+\end{center}
+
+\subsection{The \emph{update\_graph} Function}
+\label{section:update}
+
+Figure~\ref{figure:update} shows the pseudocode for the function
+\emph{update\_graph}.  This function updates the state and
+adjacency information for three kinds of vertices: (1) vertices in the
+cluster; (2) vertices in the candidate set but not in the cluster; and
+(3) vertices adjacent to the candidate set.  We sort each
+set of vertices by processor.  Then we iterate over the processors
+that have any vertices to update.  For each processor $p$, we compute the
+updated adjacencies of the vertices in set (3), removing any links to
+the cluster.  This procedure effectively removes the cluster vertices
+from the graph.
+
+We then call the function \emph{update\_graph\_local} on processor $p$.  This
+function accepts all the update information for $p$ in one
+communication.  It then iterates over all the vertices that need
+updating, and performs the appropriate update.  For vertices in set
+(1), this means setting the state to CLAIMED; for set (2), it means
+setting the state to AVAILABLE; and for set (3), it means updating the
+adjacencies and setting the state to AVAILABLE.
+
+\begin{center}
+\begin{figure}
+\begin{algorithm}{update\_graph}{\text{\emph{cluster}, \emph{adjSet}, \emph{adjCache}}}
+\text{sort \emph{cluster} by processor into sets $C_p$} \\
+\text{sort \emph{candidateSet} $\backslash$ \emph{cluster} by processor into sets $C'_p$} \\
+\text{sort \emph{adjSet} by processor into sets $A_p$} \\ 
+\begin{FOR}{\text{each $p$ such that $C_p \cup C'_p \cup A_p \neq \emptyset$}}
+M \leftarrow \emptyset \\
+\begin{FOR}{\text{each $a \in A_p$}}
+M[a] \leftarrow \text{updated adjacencies of $a$, disregarding links to cluster}
+\end{FOR} \\
+\text{\textbf{on} $p$} \CALL{update\_graph\_local}(C_p,C'_p,A_p,M)
+\end{FOR}
+\end{algorithm}
+\caption{Pseudocode for the \emph{update\_graph} function}
+\label{figure:update}
+\end{figure}
+\end{center}
+
+\section{STM Implementation}
+
+The STM version is similar to the explicit locks version, except for the following:
+\begin{enumerate}
+\item The possible vertex states are CLAIMED and AVAILABLE.  There is
+no LOCKED vertex state.
+\item Instead of locking vertices and checking locks, the
+implementation just reads and writes the states and adjacency lists.
+The STM's conflict detection mechanism ensures that the same semantics
+as in the locking version will be preserved.
+\item There is no explicit abort code.  Instead, the STM abort
+  mechanism provides the rollback.
+\end{enumerate}
+
+The code for the main algorithm of the STM version is shown in
+Figure~\ref{figure:main-stm}.  Note the absence of the locking
+function and any abort code.  Note also that we must be careful to
+reset local data structures at the beginning of the transaction, so
+that the abort works correctly.  In particular, the adjacency cache
+must be cleared at the start of every transaction.
+
+The supporting functions are similar to the locks version, but
+simpler.  Instead of the \emph{lock} function
+(Section~\ref{section:lock}), we use a \emph{cache} function that
+pulls the adjacency sets for the requested vertices into the
+\emph{adjCache} (Figure~\ref{figure:cache}).  The local function
+executed on each remote processor uses \emph{stm\_read} to perform the
+reads, so that the transaction can abort in the case of a conflict.
+Note that we do not need to check for LOCKED states, because the
+transactions guarantee serializability.  Nor do we need to check for
+CLAIMED states, because if we ever follow an edge in the graph to a
+claimed vertex, a conflict will occur: when the transaction that
+claimed the vertex commits, it will cut the link that we followed,
+causing a read-write conflict.  We use a
+\emph{compute\_candidate\_set} function simlar to the locks version
+(Section~\ref{section:update}), except that we call \emph{cache}
+instead of \emph{lock} and do not explicitly check for conflicts
+(Figure~\ref{figure:compute-cset-stm}).  Finally, the
+\emph{update\_graph} function is identical to the function shown in
+Figure~\ref{figure:update}.  However, the \emph{update\_graph\_local}
+function uses \emph{stm\_write} to update the state and adjacencies,
+so that read-write conflicts across transactions will be detected.
+(It would probably be sufficient to use \emph{stm\_read} and
+\emph{stm\_write} only on the states, and not on the adjacency lists,
+because the states ``guard'' the lists.  However, it would be very
+difficult for a compiler to prove this fact.)
+
+\begin{center}
+\begin{figure}
+\begin{algorithm}{SSCA2K4}{\text{Graph $G = (V,E)$}}
+\text{Distribute $V$ evenly over the processors $P$ into sets $V_p$}
+\\
+\begin{FOR}{\text{each processor $p$ in parallel}}
+\begin{WHILE}{V_p \neq \emptyset}
+\CALL{stm\_start} \\
+\text{\emph{adjCache}} \leftarrow \emptyset \\
+v \leftarrow \text{remove one element of $V_p$} \\
+\text{\textbf{if} $v$ is claimed \textbf{then} continue} \\
+\CALL{compute\_candidate\_set}(v) \\
+\text{\emph{cluster}} \leftarrow \CALL{compute\_cluster}() \\
+\CALL{update\_graph}() \\
+\CALL{stm\_commit} \\
+\text {add \emph{cluster} to \emph{output}}
+\end{WHILE}
+\end{FOR} \\
+\text{Merge output of all processors}
+\end{algorithm}
+\caption{Pseduocode for SSCA2 Kernel 4, STM implementation}
+\label{figure:main-stm}
+\end{figure}
+\end{center}
+
+\begin{center}
+\begin{figure}
+\begin{algorithm}{cache}{\text{vertices $V$}}
+\text{sort $V \backslash \CALL{keys}(\mbox{\emph{adjCache}})$ by processor into sets $V_p$}\\
+\begin{FOR}{\text{each processor $p$ such that $V_p$ is nonempty}}
+\text{\emph{results} $\leftarrow$ \textbf{on} $p$ \CALL{cache\_local}$(V_p)$}
+\end{FOR}
+\end{algorithm}
+\caption{Pseudocode for the \emph{cache} function}
+\label{figure:cache}
+\end{figure}
+\end{center}
+
+\begin{center}
+\begin{figure}
+\begin{algorithm}{compute\_candidate\_set}{\text{vertex $v$}}
+\text{\emph{candidateSet} $\leftarrow$ $\{v\}$} \\
+\text{\emph{adjSet} $\leftarrow$ \emph{adjCache}$[v]$} \\
+\CALL{cache}$($\emph{adjSet}$)$ \\
+\begin{WHILE}{\text{\emph{adjSet}} \neq \emptyset \text{\textbf{and}} 
+|\text{\emph{candidateSet}}| < \text{MAX\_CLUSTER\_SIZE}}
+v \leftarrow \CALL{next\_candidate}(\mbox{\emph{adjSet}}) \\
+\CALL{cache}(\mbox{\emph{adjCache}}[v] \backslash
+\mbox{\emph{candidateSet}}) \\
+\text{add $v$ to candidateSet} \\
+\text{remove $v$ from \emph{adjSet}} \\
+\text{add \emph{adjCache}$[v] \backslash \text{\emph{candidateSet}}$ to \emph{adjSet}}
+\end{WHILE}
+\end{algorithm}
+\caption{Pseudocode for the \emph{compute\_candidate\_set} function in
+the STM implementation}
+\label{figure:compute-cset-stm}
+\end{figure}
+\end{center}
+
+%\bibliography{references}
+
+\end{sloppypar}
+
+\end{document}
