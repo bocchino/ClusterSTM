@@ -1,8 +1,8 @@
 GASNet Runtime (GRT)
 ====================
 Rob Bocchino
-October 2006
-Revised December 2012
+
+October 2006, Revised December 2012
 
 This is a simple runtime built on top of GASNet that provides the
 following features:
