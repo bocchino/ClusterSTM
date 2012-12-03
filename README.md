@@ -43,7 +43,7 @@ To set up Cluster-STM on your computer, do the following:
 3. In the top-level Cluster-STM directory, issue the command `make`.
 
 This should build the runtime and benchmarks.  Then you can run the
-benchmarks located in ${CLUSTER_STM}/Benchmarks.
+benchmarks located in `${CLUSTER_STM}/Benchmarks`.
 
 References
 ----------
