@@ -1,6 +1,6 @@
 TARGETS=        timings handlers
 NUM_PROCS= 2
-CLEAN += rm timings.out
+CLEAN += rm -f timings.out
 
 include $(ATOMIC_MAK)
 include $(GRT)/grt.mak
