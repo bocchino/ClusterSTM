@@ -1,18 +1,18 @@
 #
 # Initialization script for ClusterSTM.  To use this file:
 #
-# 1. Copy it to something else, like init-local.csh, so this file can
+# 1. Copy it to something else, like init-local.bash, so this file can
 #    live unmodified in the git repository.
 #
-# 2. In your .cshrc file, set the environment variable CLUSTER_STM to
+# 2. In your .bashrc file, set the environment variable CLUSTER_STM to
 #    point to the head of the Cluster STM tree (it should be the
 #    directory where this file resides).
 #
 # 3. Configure this file as appropriate for your system and/or how you
 #    intend to use GASNet.
 #
-# 4. In your .cshrc file, add the line "source
-#    ${CLUSTER_STM}/init-local.csh"
+# 4. In your .bashrc file, add the line "source
+#    ${CLUSTER_STM}/init-local.bash"
 #
 
 # Set LIBMBA and GASNET as appropriate for your system
