@@ -16,31 +16,31 @@
 #
 
 # Set LIBMBA and GASNET as appropriate for your system
-export LIBMBA=/path/to/your/libmba/installation
-export GASNET=/path/to/your/gasnet/installation
+export LIBMBA /path/to/your/libmba/installation 
+export GASNET /path/to/your/gasnet/installation 
 
 # Add scripts to path
-export PATH=${CLUSTER_STM}/Benchmarks/scripts:${PATH}
+export PATH ${CLUSTER_STM}/Benchmarks/scripts:${PATH} 
 
-export ATOMIC_ROOT=${CLUSTER_STM}/Implementation
-export ATOMIC_MAK=${ATOMIC_ROOT}/atomic.mak
-export ATOMIC_CC=cc
-export ATOMIC_CXX=c++
-export GRT=${ATOMIC_ROOT}/grt
+export ATOMIC_ROOT ${CLUSTER_STM}/Implementation 
+export ATOMIC_MAK ${ATOMIC_ROOT}/atomic.mak 
+export ATOMIC_CC cc 
+export ATOMIC_CXX c++ 
+export GRT ${ATOMIC_ROOT}/grt 
 
 # Where to run GASNet threads
-export GASNET_SPAWNFN=L
-export SSH_SERVERS='localhost
+export GASNET_SPAWNFN L 
+export SSH_SERVERS 'localhost localhost' 
 
 # To use the UDP conduit with ssh
-export GASNET_CONDUIT=udp-conduit
-#export GASNET_MAKE_INCL=udp-seq.mak
-#export GASNET_DEFS='-DGASNET_SEQ
-export GASNET_MAKE_INCL=udp-par.mak
-export GASNET_DEFS='-DGASNET_PAR
+export GASNET_CONDUIT udp-conduit 
+#export GASNET_MAKE_INCL udp-seq.mak 
+#export GASNET_DEFS '-DGASNET_SEQ -DGASNET_NDEBUG' 
+export GASNET_MAKE_INCL udp-par.mak 
+export GASNET_DEFS '-DGASNET_PAR -DGASNET_DEBUG' 
 
 # To use the mpi conduit with mpirun
-#export GASNET_CONDUIT=mpi-conduit
-#export GASNET_MAKE_INCL=mpi-par.mak
-#export GASNET_DEFS='-DGASNET_PAR
+#export GASNET_CONDUIT mpi-conduit 
+#export GASNET_MAKE_INCL mpi-par.mak 
+#export GASNET_DEFS '-DGASNET_PAR -DGASNET_NDEBUG' 
 
