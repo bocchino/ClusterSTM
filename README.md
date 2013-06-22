@@ -37,8 +37,9 @@ To set up Cluster-STM on your computer, do the following:
 
 1. Download and install GASNet and libmba.
 
-2. Create and setup the file `init-local.csh` as instructed in the
-   file `init.csh` contained in this directory.
+2. If you use bash, create and setup the file `init-local.bash` as
+   instructed in the file `init.bash` contained in this directory.  If
+   you use csh, do the same thing using the file `init.csh`.
 
 3. In the top-level Cluster-STM directory, issue the command `make`.
 
